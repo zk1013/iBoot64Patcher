@@ -100,6 +100,7 @@ int main(int argc, const char * argv[]) {
                 return -1;
             }
             try {
+                printf("getting get_freshnonce_patch() patch\n");
                 auto p = ibp->get_freshnonce_patch();
                 patches.insert(patches.end(), p.begin(), p.end());
             } catch (...) {
