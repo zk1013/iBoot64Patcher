@@ -60,7 +60,7 @@ int main(int argc, const char * argv[]) {
                 auto p = ibp->get_boot_arg_patch(custom_boot_args);
                 patches.insert(patches.begin(), p.begin(), p.end());
             } catch (tihmstar::exception &e) {
-                printf("%s: Error doing patch_boot_args()!\n", __FUNCTION__);
+                printf("%s: Error doing patch_boot_args()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
             }
         }
@@ -71,8 +71,8 @@ int main(int argc, const char * argv[]) {
             printf("getting get_debug_enabled_patch() patch\n");
             auto p = ibp->get_debug_enabled_patch();
             patches.insert(patches.begin(), p.begin(), p.end());
-        } catch (...) {
-            printf("%s: Error doing patch_debug_enabled()!\n", __FUNCTION__);
+        } catch (tihmstar::exception &e) {
+            printf("%s: Error doing patch_debug_enabled()! (%s)\n", __FUNCTION__, e.what());
             return -1;
         }
     }
@@ -84,8 +84,8 @@ int main(int argc, const char * argv[]) {
                 printf("getting get_cmd_handler_patch(%s,0x%016llx) patch\n",cmd_handler_str,cmd_handler_ptr);
                 auto p = ibp->get_cmd_handler_patch(cmd_handler_str, cmd_handler_ptr);
                 patches.insert(patches.begin(), p.begin(), p.end());
-            } catch (...) {
-                printf("%s: Error doing patch_cmd_handler()!\n", __FUNCTION__);
+            } catch (tihmstar::exception &e) {
+                printf("%s: Error doing patch_cmd_handler()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
             }
         }
@@ -95,16 +95,16 @@ int main(int argc, const char * argv[]) {
                 printf("getting get_unlock_nvram_patch() patch\n");
                 auto p = ibp->get_unlock_nvram_patch();
                 patches.insert(patches.begin(), p.begin(), p.end());
-            } catch (...) {
-                printf("%s: Error doing get_unlock_nvram_patch()!\n", __FUNCTION__);
+            } catch (tihmstar::exception &e) {
+                printf("%s: Error doing get_unlock_nvram_patch()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
             }
             try {
                 printf("getting get_freshnonce_patch() patch\n");
                 auto p = ibp->get_freshnonce_patch();
                 patches.insert(patches.end(), p.begin(), p.end());
-            } catch (...) {
-                printf("%s: Error doing get_freshnonce_patch()!\n", __FUNCTION__);
+            } catch (tihmstar::exception &e) {
+                printf("%s: Error doing get_freshnonce_patch()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
             }
         }
@@ -115,8 +115,8 @@ int main(int argc, const char * argv[]) {
         printf("getting get_sigcheck_patch() patch\n");
         auto p = ibp->get_sigcheck_patch();
         patches.insert(patches.begin(), p.begin(), p.end());
-    } catch (...) {
-        printf("%s: Error doing patch_rsa_check()!\n", __FUNCTION__);
+    } catch (tihmstar::exception &e) {
+        printf("%s: Error doing patch_rsa_check()! (%s)\n", __FUNCTION__, e.what());
         return -1;
     }
     
@@ -131,7 +131,7 @@ int main(int argc, const char * argv[]) {
     for (auto p : patches) {
         char *buf = (char*)ibp->buf();
         offset_t off = (offset_t)(p._location - ibp->find_base());
-        printf("applying patch=%p : ",p._location);
+        printf("applying patch=0x%llX : ", p._location);
         for (int i=0; i<p._patchSize; i++) {
             printf("%02x",((uint8_t*)p._patch)[i]);
         }
