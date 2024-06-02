@@ -50,20 +50,34 @@ if(NOT DEFINED NO_PKGCFG AND NOT "$ENV{NO_PKGCFG}" MATCHES "1")
     pkg_check_modules(DEPS REQUIRED
             libgeneral
             libinsn
-			liboffsetfinder64)
+			libimg3tool
+			libimg4tool
+			libpatchfinder)
     target_include_directories(iBoot64Patcher PRIVATE "${DEPS_INCLUDE_DIRS}")
 	target_link_directories(iBoot64Patcher PRIVATE "${DEPS_LIBRARY_DIRS}")
 	target_link_libraries(futurerestore PRIVATE "${DEPS_LIBRARIES}"
 			"-lgeneral"
 			insn
-			offsetfinder64)
+			plist-2.0
+			img3tool
+			img4tool
+			patchfinder)
 else()
 	target_include_directories(iBoot64Patcher PRIVATE "${CMAKE_SOURCE_DIR}/dep_root/include")
 	target_link_directories(iBoot64Patcher PRIVATE "${CMAKE_SOURCE_DIR}/dep_root/lib")
+	if("${CMAKE_HOST_SYSTEM_NAME}" MATCHES "Darwin")
+		set(compression_lib compression)
+	else()
+		set(compression_lib lzfse)
+	endif()
 	target_link_libraries(iBoot64Patcher PRIVATE
+			${compression_lib}
 			"-lgeneral"
 			insn
-			offsetfinder64)
+			crypto
+			img3tool
+			img4tool
+			patchfinder)
 endif()
 
 execute_process(COMMAND git rev-list --count HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE VERSION_COMMIT_COUNT ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)

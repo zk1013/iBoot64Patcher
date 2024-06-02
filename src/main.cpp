@@ -10,18 +10,34 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <liboffsetfinder64/ibootpatchfinder64.hpp>
+#include <sys/stat.h>
+#include <libpatchfinder/machopatchfinder32.hpp>
+#include <libpatchfinder/machopatchfinder64.hpp>
+#include <libpatchfinder/ibootpatchfinder/ibootpatchfinder32.hpp>
+#include <libpatchfinder/ibootpatchfinder/ibootpatchfinder64.hpp>
+#include <libpatchfinder/kernelpatchfinder/kernelpatchfinder32.hpp>
+#include <libpatchfinder/kernelpatchfinder/kernelpatchfinder64.hpp>
 
 #define HAS_ARG(x,y) (!strcmp(argv[i], x) && (i + y) < argc)
 
-using namespace tihmstar::offsetfinder64;
+#define addpatch(pp) do {\
+    auto p = pp; \
+    patches.insert(patches.end(), p.begin(), p.end()); \
+} while (0)
+
+#define addloc(pp) do {\
+    patches.push_back({pp,NULL,0}); \
+} while (0)
+
+using namespace tihmstar::patchfinder;
 
 #define FLAG_UNLOCK_NVRAM (1 << 0)
 
 int main(int argc, const char * argv[]) {
-    FILE* fp = NULL;
-    char* cmd_handler_str = NULL;
-    char* custom_boot_args = NULL;
+    FILE* fp = nullptr;
+    FILE* fp2 = nullptr;
+    char* cmd_handler_str = nullptr;
+    char* custom_boot_args = nullptr;
     uint64_t cmd_handler_ptr = 0;
     int flags = 0;
 
@@ -50,15 +66,39 @@ int main(int argc, const char * argv[]) {
     
     std::vector<patch> patches;
     
-    ibootpatchfinder64 *ibp = ibootpatchfinder64::make_ibootpatchfinder64(argv[1]);
-    
+    ibootpatchfinder *ibpf = nullptr;
+    kernelpatchfinder *kpf = nullptr;
+    cleanup([&]{
+      safeDelete(ibpf);
+      safeDelete(kpf);
+    });
+    const char *iboot_path = argv[1];
+    const char *iboot_patched_path = argv[2];
+    struct stat st{0};
+    if(stat(iboot_path, &st) < 0) {
+      printf("%s: Error getting iBoot size for %s!\n", __FUNCTION__, iboot_path);
+      return -1;
+    }
+    size_t iboot_size = st.st_size;
+    try {
+      kpf = kernelpatchfinder64::make_kernelpatchfinder64(iboot_path);
+    } catch (...) {
+      try {
+        kpf = kernelpatchfinder32::make_kernelpatchfinder32(iboot_path);
+      } catch (...) {
+        try {
+          ibpf = ibootpatchfinder64::make_ibootpatchfinder64(iboot_path);
+        } catch (...) {
+          ibpf = ibootpatchfinder32::make_ibootpatchfinder32(iboot_path);
+        }
+      }
+    }
     /* Check to see if the loader has a kernel load routine before trying to apply custom boot args + debug-enabled override. */
-    if(ibp->has_kernel_load()) {
+    if(ibpf->has_kernel_load()) {
         if(custom_boot_args) {
             try {
                 printf("getting get_boot_arg_patch(%s) patch\n",custom_boot_args);
-                auto p = ibp->get_boot_arg_patch(custom_boot_args);
-                patches.insert(patches.begin(), p.begin(), p.end());
+                addpatch(ibpf->get_boot_arg_patch(custom_boot_args));
             } catch (tihmstar::exception &e) {
                 printf("%s: Error doing patch_boot_args()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
@@ -69,8 +109,7 @@ int main(int argc, const char * argv[]) {
         /* Only bootloaders with the kernel load routines pass the DeviceTree. */
         try {
             printf("getting get_debug_enabled_patch() patch\n");
-            auto p = ibp->get_debug_enabled_patch();
-            patches.insert(patches.begin(), p.begin(), p.end());
+            addpatch(ibpf->get_debug_enabled_patch());
         } catch (tihmstar::exception &e) {
             printf("%s: Error doing patch_debug_enabled()! (%s)\n", __FUNCTION__, e.what());
             return -1;
@@ -78,12 +117,11 @@ int main(int argc, const char * argv[]) {
     }
     
     /* Ensure that the loader has a shell. */
-    if(ibp->has_recovery_console()) {
+    if(ibpf->has_recovery_console()) {
         if (cmd_handler_str && cmd_handler_ptr) {
             try {
                 printf("getting get_cmd_handler_patch(%s,0x%016llx) patch\n",cmd_handler_str,cmd_handler_ptr);
-                auto p = ibp->get_cmd_handler_patch(cmd_handler_str, cmd_handler_ptr);
-                patches.insert(patches.begin(), p.begin(), p.end());
+                addpatch(ibpf->get_cmd_handler_patch(cmd_handler_str, cmd_handler_ptr));
             } catch (tihmstar::exception &e) {
                 printf("%s: Error doing patch_cmd_handler()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
@@ -93,16 +131,14 @@ int main(int argc, const char * argv[]) {
         if (flags & FLAG_UNLOCK_NVRAM) {
             try {
                 printf("getting get_unlock_nvram_patch() patch\n");
-                auto p = ibp->get_unlock_nvram_patch();
-                patches.insert(patches.begin(), p.begin(), p.end());
+                addpatch(ibpf->get_unlock_nvram_patch());
             } catch (tihmstar::exception &e) {
                 printf("%s: Error doing get_unlock_nvram_patch()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
             }
             try {
                 printf("getting get_freshnonce_patch() patch\n");
-                auto p = ibp->get_freshnonce_patch();
-                patches.insert(patches.end(), p.begin(), p.end());
+                addpatch(ibpf->get_freshnonce_patch());
             } catch (tihmstar::exception &e) {
                 printf("%s: Error doing get_freshnonce_patch()! (%s)\n", __FUNCTION__, e.what());
                 return -1;
@@ -113,8 +149,7 @@ int main(int argc, const char * argv[]) {
     /* All loaders have the RSA check. */
     try {
         printf("getting get_sigcheck_patch() patch\n");
-        auto p = ibp->get_sigcheck_patch();
-        patches.insert(patches.begin(), p.begin(), p.end());
+        addpatch(ibpf->get_sigcheck_patch());
     } catch (tihmstar::exception &e) {
         printf("%s: Error doing patch_rsa_check()! (%s)\n", __FUNCTION__, e.what());
         return -1;
@@ -122,29 +157,62 @@ int main(int argc, const char * argv[]) {
     
     
     /* Write out the patched file... */
-    fp = fopen(argv[2], "wb+");
+    fp = fopen(iboot_patched_path, "wb+");
     if(!fp) {
-        printf("%s: Unable to open %s!\n", __FUNCTION__, argv[2]);
+        printf("%s: Unable to open %s!\n", __FUNCTION__, iboot_patched_path);
         return -1;
     }
-    
-    for (auto p : patches) {
-        char *buf = (char*)ibp->buf();
-        offset_t off = (offset_t)(p._location - ibp->find_base());
-        printf("applying patch=0x%llX : ", p._location);
-        for (int i=0; i<p._patchSize; i++) {
-            printf("%02x",((uint8_t*)p._patch)[i]);
-        }
-        printf("\n");
-        memcpy(&buf[off], p._patch, p._patchSize);
+    fp2 = fopen(iboot_path, "rb+");
+    if(!fp2) {
+        printf("%s: Unable to open %s!\n", __FUNCTION__, iboot_path);
+        fflush(fp);
+        fclose(fp);
+        return -1;
     }
-    
-    printf("%s: Writing out patched file to %s...\n", __FUNCTION__, argv[2]);
-    fwrite(ibp->buf(), ibp->bufSize(), 1, fp);
-    
+    char *deciboot = (char *)calloc(1, iboot_size);
+    size_t ret = fread(deciboot, 1, iboot_size, fp2);
+    if(ret != iboot_size) {
+      printf("%s: Unable to read iBoot, read size %zu/%zu!\n", __FUNCTION__, ret, iboot_size);
+      fflush(fp);
+      fclose(fp);
+      fflush(fp2);
+      fclose(fp2);
+      free(deciboot);
+      return -1;
+    }
+    fflush(fp2);
+    fclose(fp2);
+
+    for (const auto& p2 : patches) {
+      printf("%s: Applying patch=0x%016llx: ", __FUNCTION__, p2._location);
+      for (int i=0; i<p2._patchSize; i++) {
+        printf("%02x",((uint8_t*)p2._patch)[i]);
+      }
+      if (p2._patchSize == 4) {
+        printf(" 0x%08x",*(uint32_t*)p2._patch);
+      } else if (p2._patchSize == 2) {
+        printf(" 0x%04x",*(uint16_t*)p2._patch);
+      }
+      printf("\n");
+      auto off = (ibootpatchfinder::loc64_t)(p2._location - ibpf->find_base());
+      memcpy(&deciboot[off], p2._patch, p2._patchSize);
+    }
+    printf("%s: Writing out patched file to %s...\n", __FUNCTION__, iboot_patched_path);
+    ret = fwrite(deciboot,1, iboot_size, fp);
+    if(ret != iboot_size) {
+      printf("%s: Unable to write patched iBoot, wrote size %zu/%zu!\n", __FUNCTION__, ret, iboot_size);
+      fflush(fp);
+      fclose(fp);
+      fflush(fp2);
+      fclose(fp2);
+      free(deciboot);
+      return -1;
+    }
+
     fflush(fp);
     fclose(fp);
-    
+    free(deciboot);
+
     printf("%s: Quitting...\n", __FUNCTION__);
     
     return 0;
