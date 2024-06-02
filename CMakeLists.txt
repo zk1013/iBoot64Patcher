@@ -50,6 +50,7 @@ if(NOT DEFINED NO_PKGCFG AND NOT "$ENV{NO_PKGCFG}" MATCHES "1")
     pkg_check_modules(DEPS REQUIRED
             libgeneral
             libinsn
+			libplist-2.0
 			libimg3tool
 			libimg4tool
 			libpatchfinder)
@@ -68,13 +69,16 @@ else()
 	if("${CMAKE_HOST_SYSTEM_NAME}" MATCHES "Darwin")
 		set(compression_lib compression)
 	else()
-		set(compression_lib lzfse)
+		set(compression_lib
+				dl
+				lzfse)
 	endif()
 	target_link_libraries(iBoot64Patcher PRIVATE
 			${compression_lib}
 			"-lgeneral"
 			insn
 			crypto
+			plist-2.0
 			img3tool
 			img4tool
 			patchfinder)
